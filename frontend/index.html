@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>IoT Control Cloud Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        background: #050814;
+        color: #f9fafb;
+        margin: 0;
+        padding: 2rem;
+      }
+      .app {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+      }
+      th, td {
+        border-bottom: 1px solid #1f2933;
+        padding: 0.5rem;
+        text-align: left;
+      }
+      input, button {
+        padding: 0.4rem 0.6rem;
+        margin-right: 0.5rem;
+        border-radius: 4px;
+        border: 1px solid #374151;
+        background: #0b1220;
+        color: #f9fafb;
+      }
+      button {
+        cursor: pointer;
+      }
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+        margin-right: 4px;
+      }
+      .status-online { background: #10b981; }
+      .status-offline { background: #f97316; }
+      .status-unknown { background: #6b7280; }
+    </style>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+
+      function App() {
+        const [devices, setDevices] = useState({});
+        const [wsStatus, setWsStatus] = useState("disconnected");
+        const [deviceId, setDeviceId] = useState("");
+        const [command, setCommand] = useState("");
+        const [ws, setWs] = useState(null);
+
+        // TODO: replace this with your real WebSocket URL from Terraform output
+        const WS_URL = "wss://REPLACE_WITH_YOUR_WEBSOCKET_URL/$default";
+
+        useEffect(() => {
+          try {
+            const socket = new WebSocket(WS_URL);
+            setWs(socket);
+            setWsStatus("connecting");
+
+            socket.onopen = () => setWsStatus("connected");
+            socket.onclose = () => setWsStatus("disconnected");
+            socket.onerror = () => setWsStatus("error");
+
+            socket.onmessage = (event) => {
+              try {
+                const msg = JSON.parse(event.data);
+                if (msg.type === "deviceUpdate" && msg.device) {
+                  setDevices((prev) => ({
+                    ...prev,
+                    [msg.device.deviceId]: msg.device,
+                  }));
+                }
+              } catch (e) {
+                console.error("Bad message", e);
+              }
+            };
+
+            return () => socket.close();
+          } catch (e) {
+            console.error("WebSocket init failed", e);
+          }
+        }, []);
+
+        const sendFakeTelemetry = () => {
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          const id = deviceId || `device-${Math.floor(Math.random() * 10)}`;
+          const payload = {
+            action: "sendTelemetry",
+            deviceId: id,
+            temperature: 20 + Math.random() * 10,
+            status: "online",
+          };
+          ws.send(JSON.stringify(payload));
+        };
+
+        const sendDeviceCommand = () => {
+          if (!ws || ws.readyState !== WebSocket.OPEN || !deviceId || !command) return;
+          const payload = {
+            action: "sendCommand",
+            deviceId,
+            command,
+          };
+          ws.send(JSON.stringify(payload));
+          setCommand("");
+        };
+
+        const rows = Object.values(devices);
+
+        const statusDotClass = (s) =>
+          s === "online" ? "status-dot status-online" :
+          s === "offline" ? "status-dot status-offline" :
+          "status-dot status-unknown";
+
+        return (
+          <div className="app">
+            <h1>IoT Control Cloud</h1>
+            <p>Serverless device fleet simulator (AWS + WebSockets)</p>
+            <p>WebSocket status: <strong>{wsStatus}</strong></p>
+
+            <h2>Simulate Telemetry</h2>
+            <div>
+              <input
+                placeholder="Device ID (optional)"
+                value={deviceId}
+                onChange={(e) => setDeviceId(e.target.value)}
+              />
+              <button onClick={sendFakeTelemetry}>Send Random Telemetry</button>
+            </div>
+
+            <h2>Send Command</h2>
+            <div>
+              <input
+                placeholder="Device ID"
+                value={deviceId}
+                onChange={(e) => setDeviceId(e.target.value)}
+              />
+              <input
+                placeholder="Command (e.g. reboot)"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+              />
+              <button onClick={sendDeviceCommand}>Send Command</button>
+            </div>
+
+            <h2>Devices</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Device ID</th>
+                  <th>Status</th>
+                  <th>Temperature</th>
+                  <th>Last Seen</th>
+                  <th>Last Command</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan="5">No devices yet. Send some telemetry.</td>
+                  </tr>
+                )}
+                {rows.map((d) => (
+                  <tr key={d.deviceId}>
+                    <td>{d.deviceId}</td>
+                    <td>
+                      <span className={statusDotClass(d.status)}></span>
+                      {d.status || "unknown"}
+                    </td>
+                    <td>{d.temperature ?? "-"}</td>
+                    <td>{d.lastSeen || "-"}</td>
+                    <td>{d.lastCommand || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
