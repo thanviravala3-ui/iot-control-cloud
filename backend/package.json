@@ -1,0 +1,10 @@
+{
+  "name": "iot-control-cloud-backend",
+  "version": "1.0.0",
+  "description": "Serverless backend for IoT Control Cloud (Lambda + DynamoDB + WebSockets)",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "aws-sdk": "^2.1559.0"
+  }
+}
