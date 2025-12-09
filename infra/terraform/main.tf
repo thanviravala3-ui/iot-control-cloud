@@ -220,4 +220,54 @@ resource "aws_apigatewayv2_route" "send_telemetry_route" {
   target    = "integrations/${aws_apigatewayv2_integration.ingest_integration.id}"
 }
 
-resource "aws_apigatewayv2_route" "send_com_
+resource "aws_apigatewayv2_route" "send_command_route" {
+  api_id    = aws_apigatewayv2_api.ws_api.id
+  route_key = "sendCommand"
+  target    = "integrations/${aws_apigatewayv2_integration.command_integration.id}"
+}
+
+resource "aws_apigatewayv2_stage" "ws_stage" {
+  api_id      = aws_apigatewayv2_api.ws_api.id
+  name        = "$default"
+  auto_deploy = true
+}
+
+# DynamoDB stream to WebSocket updater
+resource "aws_lambda_event_source_mapping" "stream_source" {
+  event_source_arn  = aws_dynamodb_table.devices.stream_arn
+  function_name     = aws_lambda_function.stream_to_ws.arn
+  starting_position = "LATEST"
+}
+
+# Permissions so API Gateway can call Lambdas
+resource "aws_lambda_permission" "api_gateway_ingest" {
+  statement_id  = "AllowAPIGWIngest"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ingest_telemetry.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.ws_api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "api_gateway_command" {
+  statement_id  = "AllowAPIGWCommand"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.send_command.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.ws_api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "api_gateway_connect" {
+  statement_id  = "AllowAPIGWConnect"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.connection_manager.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.ws_api.execution_arn}/*/*"
+}
+
+output "websocket_url" {
+  value = aws_apigatewayv2_api.ws_api.api_endpoint
+}
+
+output "devices_table_name" {
+  value = aws_dynamodb_table.devices.name
+}
